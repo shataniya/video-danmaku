@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width,initial-scale=1.0">
+        <title>研究视频弹幕的算法</title>
+        <script src="./node_modules/koso/koso.js"></script>
+        <style>
+            *{
+                margin: 0;
+                padding: 0;
+            }
+            body{
+                overflow-x: hidden;
+            }
+            .container{
+                position: relative;
+                width: 100vw;
+                height: 100vh;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                background-color: black;
+            }
+            .video{
+                height: 100%;
+            }
+            .danmu-box{
+                width: 100%;
+                height: 100%;
+                position: absolute;
+                top: 0;
+                left: 0;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                font-size: 25px;
+                color: #fff;
+            }
+            .form{
+                width: 290px;
+                height: 40px;
+                position: absolute;
+                bottom: 50px;
+                left: 50%;
+                transform: translateX(-50%);
+                display: flex;
+                align-items: center;
+            }
+            .inputBox{
+                display: block;
+                width: 250px;
+                height: 40px;
+                box-sizing: border-box;
+                padding: 0 10px;
+                font-size: 12px;
+                color: black;
+                border-radius: 4px;
+            }
+            .submit{
+                display: block;
+                width: 40px;
+                height: 40px;
+                border: none;
+                outline: none;
+                font-size: 12px;
+                color: black;
+                border-radius: 4px;
+                margin-left: 4px;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <video class="video" autoplay src="./1.周杰伦 - 告白气球_new_file(1)_x264(Av15227278,P1).mp4" controls></video>
+            <div class="form">
+                <input type="text" class="inputBox" placeholder="输入你的弹幕" required>
+                <input type="submit" class="submit" value="提交">
+            </div>
+        </div>
+        <script>
+
+            function domLeft(dom){
+                var oleft = dom.offsetLeft
+                if(dom === document.body){
+                    return 0
+                }
+                while(getComputedStyle(dom.parentElement).position === "static" && dom.parentElement !== document.body){
+                    dom = dom.parentElement
+                }
+                return oleft + domLeft(dom.parentElement)
+            }
+
+            function domTop(dom){
+                var otop = dom.offsetTop
+                if(dom === document.body){
+                    return 0
+                }
+                while(getComputedStyle(dom.parentElement).position === "static" && dom.parentElement !== document.body){
+                    dom = dom.parentElement
+                }
+                return otop + domLeft(dom.parentElement)
+            }
+
+            /**
+             * @function 创建事件发布订阅
+             */
+             function EventBox(){
+                this.events = {}
+            }
+            EventBox.prototype.on = function(name,fn){
+                if(!this.events[name]){
+                    this.events[name] = [fn]
+                }else{
+                    this.events[name].push(fn)
+                }
+            }
+            EventBox.prototype.emit = function(name,params){
+                if(!this.events[name]){
+                    return
+                }
+                for(let i=0,len=this.events[name].length;i<len;i++){
+                    this.events[name][i](params)
+                }
+            }
+            EventBox.prototype.once = function(name,fn){
+                this.events[name] = [fn]
+            }
+
+            // 包含字体的div长度 = font-Size * 字体的个数
+            // 哔哩哔哩的默认弹幕字体是 25px
+            // 哔哩哔哩的弹幕都是从右往左运动的
+
+            // 开发一个弹幕算法
+            var container = document.querySelector(".container")
+
+            // 打算设置20个弹幕赛道，每条赛道的宽度是 30px
+
+            // 如何定义赛道
+            var Tracks = []
+            for(let i=0;i<20;i++){
+                Tracks[i] = false
+            }
+
+            /**
+             * @function DanMu
+             */
+            function DanMu(content,time,styles){
+                this.content = content
+                this.label = false // 记录一个触发器，这个触发器只能触发一次
+                for(let i=0;i<20;i++){
+                    if(!Tracks[i]){
+                        // 说明此时的赛道是允许让弹幕进入的
+                        Tracks[i] = true
+                        this.Sign = i // 记住这个赛道的号码
+                        break;
+                    }
+                }
+                this.time = time || null
+                var __styles = {
+                    fontSize:"25px",
+                    color:"#fff",
+                    position:"absolute",
+                    whiteSpace:"nowrap"
+                }
+                this.styles = styles || __styles
+                this.div = null
+                this.__wdith = document.body.clientWidth
+                this.count = 0
+                this.gap = 20 // 默认每条弹幕之间最近的横向间隔是 20px
+            }
+
+            // create dom
+            DanMu.prototype.create = function(){
+                this.top = this.Sign*33
+                var div = document.createElement("div")
+                div.innerHTML = this.content
+                div.style.top = this.top + "px"
+                for(let o in this.styles){
+                    div.style[o] = this.styles[o]
+                }
+                div.style.left = this.__wdith + "px"
+                this.div = div
+                container.append(div)
+                this.__self = parseInt(this.styles.fontSize)*this.content.length
+                return this
+            }
+
+            DanMu.prototype.move = function(speed){
+                this.speed = speed || 1
+                var timer = setInterval(()=>{
+                    this.count++
+                    if(parseInt(this.div.style.left) + this.__self + this.gap < this.__wdith && !this.label){
+                        // 说明此时弹幕已经全部进入窗口，可以赛道已经空出来，可以下一条弹幕进入赛道了
+                        Tracks[this.Sign] = false
+                        this.label = true
+                    }
+                    if(parseInt(this.div.style.left) < -this.__self){
+                        clearInterval(timer)
+                        container.removeChild(this.div)
+                    }else{
+                        this.div.style.left = parseInt(this.div.style.left) - this.speed + "px"
+                    }
+                },10)
+            }
+
+            // console.log(document.body.clientHeight) // 624px
+
+            var video = document.querySelector(".video")
+            var inputBox = document.querySelector(".inputBox")
+            var submit = document.querySelector(".submit")
+
+            var docs = null
+
+            submit.onclick = function(event){
+                var data = {
+                    content:inputBox.value,
+                    currentTime:video.currentTime+1
+                }
+                docs.push(data)
+                $.post("http://localhost:3000/dm",formate(data)).then(function(data){
+                    console.log(data)
+                })
+                inputBox.value = ""
+            }
+
+            function formate(obj){
+                var s = ""
+                for(let o in obj){
+                    s += o+"="+obj[o]+"&"
+                }
+                return s.replace(/&$/g,"")
+            }
+            
+            $.get("http://localhost:3000/dm").then(function(data){
+                docs = data
+            })
+
+            var __current = 0
+            video.ontimeupdate = function(){
+                // console.log(this.currentTime - __current)
+                __current = this.currentTime
+                for(let i=0,len=docs.length;i<len;i++){
+                    if(Math.abs(this.currentTime - docs[i].currentTime) < 0.12){
+                        new DanMu(docs[i].content).create().move()
+                    }
+                }
+                // new DanMu("告白气球").create().move()
+            }
+
+            
+
+
+        </script>
+    </body>
+</html>
